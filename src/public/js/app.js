@@ -1,11 +1,9 @@
 const socket = io();
-
 const welcome = document.getElementById("welcome");
 const form = welcome.querySelector("form");
 const room = document.getElementById("room");
-
+const quit = document.getElementById("quit");
 room.hidden = true;
-
 let roomName;
 
 function addMessage(message) {
@@ -19,9 +17,17 @@ function handleMessageSubmit(event) {
   event.preventDefault();
   const input = room.querySelector("#msg input");
   const value = input.value;
-  socket.emit("new_message", input.value, roomName, () => {
-    addMessage(`You: ${value}`);
-  });
+  socket.emit("new_message", input.value, roomName, () =>
+    addMessage(`You: ${value}`)
+  );
+  input.value = "";
+}
+
+function handleNicknameSubmit(event) {
+  event.preventDefault();
+  const input = room.querySelector("#nickname input");
+  const value = input.value;
+  socket.emit("nickname", value);
   input.value = "";
 }
 
@@ -32,11 +38,13 @@ function showRoom() {
   h3.innerText = `Room ${roomName}`;
   const msgForm = room.querySelector("#msg");
   msgForm.addEventListener("submit", handleMessageSubmit);
+  const nicknameForm = room.querySelector("#nickname");
+  nicknameForm.addEventListener("submit", handleNicknameSubmit);
 }
 
 function openRooms(rooms) {
   const ul = welcome.querySelector("ul");
-  ul.innerHTML = ""; // 기존 목록 초기화
+  ul.innerHTML = ""; // 리스트 초기화
   rooms.forEach((room) => {
     const li = document.createElement("li");
     li.innerText = room;
@@ -44,6 +52,7 @@ function openRooms(rooms) {
   });
 }
 
+// 이벤트 리스너 등록
 socket.on("openRoom", openRooms);
 
 function handleRoomSubmit(event) {
@@ -59,13 +68,17 @@ form.addEventListener("submit", handleRoomSubmit);
 socket.on("welcome", (user, newCount) => {
   const h3 = room.querySelector("h3");
   h3.innerText = `Room ${roomName} (${newCount})`;
-  addMessage(`${user} arrived!`);
+  addMessage(`${user} 님이 입장하셨습니다.`);
 });
 
 socket.on("bye", (left, newCount) => {
   const h3 = room.querySelector("h3");
   h3.innerText = `Room ${roomName} (${newCount})`;
-  addMessage(`${left} left ㅠㅠ`);
+  addMessage(`${left} 님이 퇴장하셨습니다. ㅠㅠ`);
 });
 
 socket.on("new_message", addMessage);
+
+quit.addEventListener("click", function () {
+  window.location.href = "/";
+});
