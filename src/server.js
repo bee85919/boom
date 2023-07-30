@@ -1,82 +1,53 @@
-// 필요한 모듈 가져오기
 import http from "http";
 import SocketIO from "socket.io";
 import express from "express";
 
 const app = express();
+// 각 방에 대한 사용자 목록을 저장하는 객체
+const rooms = {};
 
-// Pug 템플릿 엔진 설정
 app.set("view engine", "pug");
 app.set("views", __dirname + "/views");
-
-// 'public' 디렉토리에서 정적 파일 제공
 app.use("/public", express.static(__dirname + "/public"));
-
-// 라우트 정의
 app.get("/", (_, res) => res.render("home"));
 app.get("/*", (_, res) => res.redirect("/"));
 
-// HTTP 서버와 Socket.IO 서버 인스턴스 생성
 const httpServer = http.createServer(app);
 const wsServer = SocketIO(httpServer);
 
-// 공개 방 목록 반환하는 헬퍼 함수
-function publicRooms() {
-  const {
-    sockets: {
-      adapter: { sids, rooms }
-    }
-  } = wsServer;
-  const publicRooms = [];
-  rooms.forEach((_, key) => {
-    if (sids.get(key) === undefined) {
-      publicRooms.push(key);
-    }
-  });
-  return publicRooms;
-}
-
-// 방 인원 수를 반환하는 헬퍼 함수
-function countRoom(roomName) {
-  return wsServer.sockets.adapter.rooms.get(roomName)?.size;
-}
-
-// 웹소켓 이벤트 처리
 wsServer.on("connection", (socket) => {
-  wsServer.sockets.emit("openRoom", publicRooms());
-  socket["nickname"] = "guest";
-
-  socket.onAny((event) => {
-    console.log(`Socket Event: ${event}`);
+  // 사용자가 방에 입장하는 이벤트
+  socket.on("join_room", (roomName) => {
+    // 해당 방에 이미 2명의 사용자가 있는 경우 입장을 거부하고 연결을 종료
+    if (rooms[roomName] && rooms[roomName].length === 2) {
+      socket.emit("room_full");
+      socket.disconnect();
+    } else {
+      // 사용자를 방에 추가
+      if (rooms[roomName]) {
+        rooms[roomName].push(socket.id);
+      } else {
+        rooms[roomName] = [socket.id];
+      }
+      socket.join(roomName);
+      socket.to(roomName).emit("welcome");
+      // 사용자가 연결을 끊는 경우, 사용자를 방에서 제거
+      socket.on("disconnect", () => {
+        rooms[roomName] = rooms[roomName].filter((user) => user !== socket.id);
+      });
+    }
   });
 
-  socket.on("enter_room", (roomName, done) => {
-    socket.join(roomName);
-    done();
-    socket.to(roomName).emit("welcome", socket.nickname, countRoom(roomName));
-    wsServer.sockets.emit("room_change", publicRooms());
+  socket.on("offer", (offer, roomName) => {
+    socket.to(roomName).emit("offer", offer);
   });
-
-  socket.on("disconnecting", () => {
-    socket.rooms.forEach((room) =>
-      socket.to(room).emit("bye", socket.nickname, countRoom(room) - 1)
-    );
+  socket.on("answer", (answer, roomName) => {
+    socket.to(roomName).emit("answer", answer);
   });
-
-  socket.on("disconnect", () => {
-    wsServer.sockets.emit("room_change", publicRooms());
+  socket.on("ice", (ice, roomName) => {
+    socket.to(roomName).emit("ice", ice);
   });
-
-  socket.on("new_message", (msg, room, done) => {
-    socket.to(room).emit("new_message", `${socket.nickname}: ${msg}`);
-    done();
-  });
-
-  socket.on("nickname", (nickname) => (socket["nickname"] = nickname));
 });
 
-// 서버 시작 및 지정한 포트에서 대기
-const PORT = process.env.PORT || 3000;
-httpServer.listen(PORT, () =>
-  console.log(`http://localhost:${PORT} 에서 대기 중`)
-);
+const handleListen = () => console.log(`Listening on http://localhost:3000`);
+httpServer.listen(3000, handleListen);
